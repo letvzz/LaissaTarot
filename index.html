@@ -460,6 +460,9 @@ const AG_BLOQ=[];
 const AG_RESERVAS='https://docs.google.com/spreadsheets/d/e/2PACX-1vTyAHMWD27cYKk1xtqM4DnP0Wma9dSZMq-R5eUgUGVI4cHbw5KXO2JvpZ7gF6a2Uj0B5IGvFfLM3OR4/pubhtml/sheet?headers=false&gid=0';
 const AG_RESERVAS_MANUAIS=[];
 const AG_MOSTRAR_CHEIOS=true;
+/* AG_ICAL: "Endereço secreto em formato iCal" da agenda da Laissa (Google Agenda → Configurações → essa agenda).
+   Os eventos dela passam a aparecer como horários ocupados no site. Serve para qualquer conta Google. */
+const AG_ICAL='';
 const AG_DIAS=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
 let agDay=null,agHour=null,agBusy=[];
 const pad=n=>String(n).padStart(2,'0');
@@ -544,6 +547,44 @@ async function agLoad(){
     return base.concat(corpo.map(r=>agKey(r[dCol],r[hCol])).filter(Boolean));
   }catch(e){return base}
 }
+/* lê a agenda (iCal) e devolve os blocos ocupados dentro do horário de atendimento */
+function agParseIcal(txt){
+  const out=[];if(!txt||!txt.includes('BEGIN:VCALENDAR'))return out;
+  txt=txt.replace(/\r\n[ \t]/g,'').replace(/\n[ \t]/g,'');
+  const re=/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g;let m;
+  while((m=re.exec(txt))){
+    const b=m[1];if(/STATUS:CANCELLED/i.test(b)||/TRANSP:TRANSPARENT/i.test(b))continue;
+    const db=b.match(/DTSTART[^:\n]*:([^\n]+)/i);if(!db)continue;
+    let de=b.match(/DTEND[^:\n]*:([^\n]+)/i);
+    const val=db[1].trim(),allDay=/DTSTART;VALUE=DATE:/i.test(b)||/^\d{8}$/.test(val);
+    const toDate=v=>{
+      const m1=v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?/);
+      return m1?new Date(+m1[1],+m1[2]-1,+m1[3],+(m1[4]||0),+(m1[5]||0)):null;
+    };
+    const ini=toDate(val);if(!ini)continue;
+    let fim=de?toDate(de[1].trim()):null;
+    if(!fim)fim=new Date(ini.getTime()+(allDay?24*60:30)*60000);
+    const dia=isoD(ini);
+    if(allDay){                       // dia inteiro: bloqueia o dia todo
+      for(let m2=0;m2<AG_HORAS.length;m2++)out.push(dia+' '+AG_HORAS[m2]);
+      continue;
+    }
+    for(const h of AG_HORAS){
+      const [H,M]=h.split(':').map(Number),ini2=new Date(ini.getFullYear(),ini.getMonth(),ini.getDate(),H,M);
+      if(ini2<fim&&new Date(ini2.getTime()+20*60000)>ini){out.push(dia+' '+h)}
+    }
+  }
+  return out;
+}
+async function agLoadAgenda(){
+  if(!AG_ICAL)return [];
+  try{return agParseIcal(await (await fetch(AG_ICAL,{cache:'no-store'})).text())}catch(e){return []}
+}
+async function agLoadAll(){
+  const assinc=[agLoad(),agLoadAgenda()];
+  const r=await Promise.all(assinc);
+  return r[0].concat(r[1]);
+}
 const agPast=h=>{const [H,M]=h.split(':').map(Number),t=new Date();return t.getHours()*60+t.getMinutes()>=H*60+M-40};
 function agRender(){
   const box=$('agDays'),slots=$('agSlots');
@@ -585,9 +626,9 @@ if(agBtn)agBtn.onclick=()=>{
   const msg='Olá, Laissa! Quero agendar uma tiragem:\n\nDia: '+AG_DIAS[dt.getDay()]+', '+pad(dd)+'/'+pad(m)+'/'+y+'\nHorário: '+agHour+(nome?'\nNome: '+nome:'')+'\n\nAguardo a confirmação. Obrigado(a)!';
   agSave(agDay,agHour,nome||'')
   window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
-  agHour=null;agLoad().then(b=>{agBusy=b;agRender()});
+  agHour=null;agLoadAll().then(b=>{agBusy=b;agRender()});
 };
-agLoad().then(b=>{agBusy=b;agRender();agRenderMine()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender();agRenderMine()});
+agLoadAll().then(b=>{agBusy=b;agRender();agRenderMine()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender();agRenderMine()});
 
 render();
 let nota=0;const fbs=[...document.querySelectorAll('#stars button')];
