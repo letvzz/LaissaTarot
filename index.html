@@ -2,7 +2,17 @@
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#eef5ea">
-<title>Laissa Tarot – Tiragens</title>
+<title>Laissa Tarot – Tiragens de tarot</title>
+<meta name="description" content="Leituras claras e sensíveis para amor, decisões e autoconhecimento. Escolha sua tiragem e agende o horário pelo site.">
+<link rel="canonical" href="https://letvzz.github.io/LaissaTarot/">
+<meta property="og:type" content="website"><meta property="og:locale" content="pt_BR"><meta property="og:site_name" content="Laissa Tarot">
+<meta property="og:title" content="Laissa Tarot – Tiragens de tarot">
+<meta property="og:description" content="Leituras claras e sensíveis para amor, decisões e autoconhecimento. Agende sua tiragem.">
+<meta property="og:url" content="https://letvzz.github.io/LaissaTarot/">
+<meta property="og:image" content="https://letvzz.github.io/LaissaTarot/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Laissa Tarot – Tiragens de tarot">
+<meta name="twitter:description" content="Leituras claras e sensíveis para amor, decisões e autoconhecimento. Agende sua tiragem.">
+<meta name="twitter:image" content="https://letvzz.github.io/LaissaTarot/og-image.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Manrope:wght@400;500;600;700&display=swap">
 <style>
@@ -216,6 +226,7 @@ textarea.fld{min-height:120px;resize:vertical}
 <div>
 <span class="lbl">2. Escolha o horário</span>
 <div class="slots" id="agSlots" role="group" aria-label="Horário do atendimento"></div>
+<p class="aviso" id="agAlt" role="status"></p>
 </div>
 <input class="fld" id="agNome" type="text" placeholder="Seu nome" autocomplete="name">
 <p class="obs" id="agObs">Cada atendimento dura cerca de 20 minutos. Horários ocupados não aparecem na lista — a Laissa confirma o seu agendamento pelo WhatsApp.</p>
@@ -440,6 +451,7 @@ const AG_HORAS=(()=>{const o=[];for(let m=19*60+30;m<=21*60+40;m+=20)o.push(Stri
 const AG_BLOQ=[];
 const AG_RESERVAS='https://docs.google.com/spreadsheets/d/e/2PACX-1vTyAHMWD27cYKk1xtqM4DnP0Wma9dSZMq-R5eUgUGVI4cHbw5KXO2JvpZ7gF6a2Uj0B5IGvFfLM3OR4/pubhtml/sheet?headers=false&gid=0';
 const AG_RESERVAS_MANUAIS=[];
+const AG_MOSTRAR_CHEIOS=true;
 const AG_DIAS=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
 let agDay=null,agHour=null,agBusy=[];
 const pad=n=>String(n).padStart(2,'0');
@@ -466,8 +478,9 @@ function agKey(data,hora){
   const hm=h.match(/^(\d{1,2})[:h]?(\d{2})/);
   return iso&&hm?iso+' '+(hm[1].length<2?'0'+hm[1]:hm[1])+':'+hm[2]:'';
 }
+const agLocal=()=>{try{return JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[]}catch(e){return[]}};
 async function agLoad(){
-  const base=AG_RESERVAS_MANUAIS.map(x=>String(x).trim());
+  const base=AG_RESERVAS_MANUAIS.map(x=>String(x).trim()).concat(agLocal());
   if(!AG_RESERVAS)return base;
   try{
     const txt=await (await fetch(AG_RESERVAS,{cache:'no-store'})).text();
@@ -485,12 +498,13 @@ function agRender(){
   const box=$('agDays'),slots=$('agSlots');
   if(!box)return;
   const hoje=new Date();hoje.setHours(0,0,0,0);
-  const livres=d=>{const iso=isoD(d);return AG_HORAS.filter(h=>!agBusy.includes(iso+' '+h)&&!(iso===isoD(new Date())&&agPast(h)))};
+  const occupied=(iso,h)=>agBusy.includes(iso+' '+h)||(iso===isoD(new Date())&&agPast(h));
+  const livres=d=>{const iso=isoD(d);return AG_HORAS.filter(h=>!occupied(iso,h))};
   let html='',n=0;
   for(let i=0;i<28&&n<8;i++){
     const d=new Date(hoje);d.setDate(hoje.getDate()+i);
     const wd=d.getDay();if(wd===0||wd===6)continue;if(AG_BLOQ.includes(isoD(d)))continue;
-    if(!livres(d).length)continue;
+    if(!livres(d).length&&!AG_MOSTRAR_CHEIOS)continue;
     n++;const val=isoD(d);
     html+='<button type="button" data-day="'+val+'" aria-pressed="'+(agDay===val)+'">'+(i===0?'Hoje, ':i===1?'Amanhã, ':'')+AG_DIAS[wd].replace('-feira','')+', '+brD(d)+'</button>';
   }
@@ -500,7 +514,11 @@ function agRender(){
   const [y,m,dd]=(agDay||'').split('-').map(Number),dt=agDay?new Date(y,m-1,dd):null;
   const venc=dt?livres(dt):[];
   if(agHour&&!venc.includes(agHour))agHour=null;
-  slots.innerHTML=venc.map(h=>'<button type="button" data-hour="'+h+'" aria-pressed="'+(agHour===h)+'">'+h+'</button>').join('')||'<p class="aviso">Nenhum horário livre neste dia. Escolha outro dia.</p>';
+  const isoDia=agDay||'';
+  slots.innerHTML=AG_HORAS.map(h=>{const busy=occupied(isoDia,h),pick=!busy&&agHour===h;
+    return '<button type="button" data-hour="'+h+'" aria-pressed="'+pick+'"'+(busy?' disabled aria-label="'+h+' — ocupado" title="Ocupado"':'')+'>'+h+(busy?' · ocupado':'')+'</button>'}).join('');
+  const alt=$('agAlt');
+  if(alt)alt.textContent=venc.length?'':'Todos os horários deste dia já estão ocupados — escolha outro dia ou fale no WhatsApp.';
   const st=$('agSend');
   if(st){st.disabled=!agHour;st.textContent=agHour?'Agendar '+AG_DIAS[dt.getDay()]+' '+brD(dt)+' às '+agHour:'Escolha um horário'}
 }
@@ -514,7 +532,9 @@ if(agBtn)agBtn.onclick=()=>{
   const [y,m,dd]=agDay.split('-').map(Number),dt=new Date(y,m-1,dd);
   const nome=($('agNome')?.value||'').trim();
   const msg='Olá, Laissa! Quero agendar uma tiragem:\n\nDia: '+AG_DIAS[dt.getDay()]+', '+pad(dd)+'/'+pad(m)+'/'+y+'\nHorário: '+agHour+(nome?'\nNome: '+nome:'')+'\n\nAguardo a confirmação. Obrigado(a)!';
+  try{const r=JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[];const k=agDay+' '+agHour;if(!r.includes(k)){r.push(k);localStorage.setItem('laissa-ag',JSON.stringify(r))}}catch(e){}
   window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
+  agHour=null;agLoad().then(b=>{agBusy=b;agRender()});
 };
 agLoad().then(b=>{agBusy=b;agRender()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender()});
 
