@@ -438,13 +438,23 @@ $('checkout').onclick=showOrder;
    A reserva definitiva é feita no WhatsApp: quando a Laissa confirma, o horário deixa de aparecer. */
 const AG_HORAS=(()=>{const o=[];for(let m=19*60+30;m<=21*60+40;m+=20)o.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));return o})();
 const AG_BLOQ=[];
-const AG_RESERVAS='https://docs.google.com/spreadsheets/d/e/2PACX-1vTyAHMWD27cYKk1xtqM4DnP0Wma9dSZMq-R5eUgUGVI4cHbw5KXO2JvpZ7gF6a2Uj0B5IGvFfLM3OR4/pub?gid=0&single=true&output=csv';
+const AG_RESERVAS='https://docs.google.com/spreadsheets/d/e/2PACX-1vTyAHMWD27cYKk1xtqM4DnP0Wma9dSZMq-R5eUgUGVI4cHbw5KXO2JvpZ7gF6a2Uj0B5IGvFfLM3OR4/pubhtml/sheet?headers=false&gid=0';
 const AG_RESERVAS_MANUAIS=[];
 const AG_DIAS=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
 let agDay=null,agHour=null,agBusy=[];
 const pad=n=>String(n).padStart(2,'0');
 const isoD=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const brD=d=>pad(d.getDate())+'/'+pad(d.getMonth()+1);
+/* o Google pode publicar a aba como CSV ou como HTML (pubhtml); os dois são lidos */
+function agRowsFromHtml(h){
+  const rows=[],re=/<tr[\s\S]*?<\/tr>/gi;let m;
+  while((m=re.exec(h))){
+    const cells=[...m[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map(c=>c[1].replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim());
+    if(cells.length)rows.push(cells);
+  }
+  return rows;
+}
 /* aceita 2026-11-17, 17/11/2026 e 17/11; horário aceita 19:30, 19h30, 19:30:00 */
 function agKey(data,hora){
   if(!data||!hora)return '';
@@ -460,10 +470,14 @@ async function agLoad(){
   const base=AG_RESERVAS_MANUAIS.map(x=>String(x).trim());
   if(!AG_RESERVAS)return base;
   try{
-    const rows=parseCsv(await (await fetch(AG_RESERVAS)).text()).filter(r=>r.some(c=>c.trim()));
-    const h=rows[0].map(x=>x.trim().toLowerCase()),iD=h.findIndex(x=>x.includes('data')),iH=h.findIndex(x=>x.includes('hor'));
-    if(iD<0||iH<0)return base;
-    return base.concat(rows.slice(1).map(r=>agKey(r[iD],r[iH])).filter(Boolean));
+    const txt=await (await fetch(AG_RESERVAS,{cache:'no-store'})).text();
+    const rows=txt.trim().startsWith('<')?agRowsFromHtml(txt):parseCsv(txt);
+    const linhas=rows.filter(r=>r.some(c=>String(c).trim()));
+    if(!linhas.length)return base;
+    const h0=linhas[0].map(x=>String(x).trim().toLowerCase()),iD=h0.findIndex(x=>x.includes('data')),iH=h0.findIndex(x=>x.includes('hor'));
+    const corpo=(iD>=0&&iH>=0)?linhas.slice(1):linhas;
+    const dCol=iD>=0?iD:0,hCol=iH>=0?iH:1;
+    return base.concat(corpo.map(r=>agKey(r[dCol],r[hCol])).filter(Boolean));
   }catch(e){return base}
 }
 const agPast=h=>{const [H,M]=h.split(':').map(Number),t=new Date();return t.getHours()*60+t.getMinutes()>=H*60+M-40};
