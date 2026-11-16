@@ -203,7 +203,13 @@ textarea.fld{min-height:120px;resize:vertical}
 .ag .slots button{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:.88rem;cursor:pointer;transition:background .2s,color .2s}
 .ag .slots button[aria-pressed="true"]{background:var(--acc);color:var(--onacc);border-color:transparent}
 .ag .lbl{font-weight:600;font-size:.9rem}
-.ag .aviso{font-size:.86rem;opacity:.8}.ag .obs{font-size:.9rem;color:var(--soft)}
+.ag .aviso{font-size:.86rem;opacity:.8}
+.agmine{margin-top:6px}.agmine .agtitle{font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.agmine .agitem{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.agmine .agitem b{font-weight:600}.agmine .agitem small{display:block;opacity:.75}
+.agmine .cancel{border:1px solid var(--line);background:transparent;color:#a33;font:inherit;font-size:.85rem;padding:8px 14px;border-radius:999px;cursor:pointer}
+.agmine .cancel:hover{background:rgba(170,51,51,.08)}
+.agmine .ok{color:var(--soft);font-size:.86rem}.ag .obs{font-size:.9rem;color:var(--soft)}
 .cp.off{opacity:.62}.cp .used{color:#a33;font-size:.82rem;font-weight:600;margin:6px 0 0}.cp .btn[disabled]{opacity:.5;cursor:not-allowed}
 </style></head><body>
 <div class="blobs" aria-hidden="true"><i></i><i></i></div>
@@ -231,6 +237,8 @@ textarea.fld{min-height:120px;resize:vertical}
 <input class="fld" id="agNome" type="text" placeholder="Seu nome" autocomplete="name">
 <p class="obs" id="agObs">Cada atendimento dura cerca de 20 minutos. Horários ocupados não aparecem na lista — a Laissa confirma o seu agendamento pelo WhatsApp.</p>
 <button class="btn" id="agSend" type="button">Agendar pelo WhatsApp</button>
+<p class="obs" id="agObs2">Agendou por aqui e precisa desmarcar? Use <b>Meus agendamentos</b> logo abaixo.</p>
+<div id="agMine" class="agmine"></div>
 </div>
 <div class="head reveal" id="pedido"><span class="eyebrow">Carrinho</span><h2>Monte seu pedido</h2><p>Escolha as leituras, veja o total e finalize pelo WhatsApp.</p></div>
 <div class="shop" id="shop"></div>
@@ -478,7 +486,50 @@ function agKey(data,hora){
   const hm=h.match(/^(\d{1,2})[:h]?(\d{2})/);
   return iso&&hm?iso+' '+(hm[1].length<2?'0'+hm[1]:hm[1])+':'+hm[2]:'';
 }
-const agLocal=()=>{try{return JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[]}catch(e){return[]}};
+/* MEU AGENDAMENTO: fica gravado neste navegador para o cliente consultar ou cancelar.
+   Formato novo: [{dia:'2026-11-17',hora:'19:30',nome:'Ana',pedido:'1234'}]; aceita também o formato antigo ['2026-11-17 19:30']. */
+const agLocal=()=>{try{
+  const r=JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[];
+  return r.map(x=>typeof x==='string'?{dia:(x.split(' ')[0]||''),hora:(x.split(' ')[1]||''),nome:'',pedido:''}:x).filter(x=>x.dia&&x.hora);
+}catch(e){return[]}};
+const agSave=(dia,hora,nome)=>{try{
+  const r=agLocal().filter(x=>!(x.dia===dia&&x.hora===hora));
+  r.push({dia,hora,nome:nome||'',pedido:agPedidoId()});
+  localStorage.setItem('laissa-ag',JSON.stringify(r));
+}catch(e){}};
+const agRemove=(dia,hora)=>{try{
+  localStorage.setItem('laissa-ag',JSON.stringify(agLocal().filter(x=>!(x.dia===dia&&x.hora===hora))));
+}catch(e){}};
+const agPedidoId=()=>String(Math.floor(Date.now()/60000)%10000).padStart(4,'0');
+function agRenderMine(){
+  const box=$('agMine');
+  if(!box)return;
+  const itens=agLocal().sort((a,b)=>(a.dia+' '+a.hora).localeCompare(b.dia+' '+b.hora));
+  if(!itens.length){box.innerHTML='';return}
+  box.innerHTML='<div class="agtitle">Meus agendamentos</div>'+itens.map(x=>{
+    const [y,m,d]=x.dia.split('-').map(Number),dt=new Date(y,m-1,d);
+    const dia=isNaN(dt)?x.dia:AG_DIAS[dt.getDay()]+', '+brD(dt);
+    return '<div class="agitem"><div><b>'+dia+' às '+x.hora+'</b><small>Pedido '+esc(x.pedido||'—')+(x.nome?' · '+esc(x.nome):'')+' · aguardando confirmação</small></div>'
+      +'<button type="button" class="cancel" data-agcancel="'+x.dia+'|'+x.hora+'">Cancelar</button></div>';
+  }).join('');
+}
+function agCancel(dia,hora){
+  const [y,m,d]=dia.split('-').map(Number),dt=new Date(y,m-1,d);
+  const diaTxt=isNaN(dt)?dia:AG_DIAS[dt.getDay()]+', '+brD(dt);
+  if(!confirm('Cancelar o agendamento de '+diaTxt+' às '+hora+'?'))return;
+  agRemove(dia,hora);
+  agBusy=agBusy.filter(k=>k!==dia+' '+hora);
+  try{const st=JSON.parse(localStorage.getItem('laissa-agcan')||'[]')||[];st.push(dia+' '+hora);localStorage.setItem('laissa-agcan',JSON.stringify(st))}catch(e){}
+  const msg='Olá, Laissa! Preciso cancelar o meu agendamento:\n\nDia: '+diaTxt+'\nHorário: '+hora+'\n\nDesculpe o transtorno!';
+  window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
+  agRenderMine();agRender();
+  const box=$('agMine');
+  if(box)box.insertAdjacentHTML('afterbegin','<p class="ok" role="status">Agendamento cancelado. O horário voltou a ficar disponível e a Laissa foi avisada pelo WhatsApp.</p>');
+}
+document.addEventListener('click',e=>{
+  const c=e.target.closest('[data-agcancel]');
+  if(c){const [dia,hora]=c.dataset.agcancel.split('|');agCancel(dia,hora)}
+});
 async function agLoad(){
   const base=AG_RESERVAS_MANUAIS.map(x=>String(x).trim()).concat(agLocal());
   if(!AG_RESERVAS)return base;
@@ -532,11 +583,11 @@ if(agBtn)agBtn.onclick=()=>{
   const [y,m,dd]=agDay.split('-').map(Number),dt=new Date(y,m-1,dd);
   const nome=($('agNome')?.value||'').trim();
   const msg='Olá, Laissa! Quero agendar uma tiragem:\n\nDia: '+AG_DIAS[dt.getDay()]+', '+pad(dd)+'/'+pad(m)+'/'+y+'\nHorário: '+agHour+(nome?'\nNome: '+nome:'')+'\n\nAguardo a confirmação. Obrigado(a)!';
-  try{const r=JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[];const k=agDay+' '+agHour;if(!r.includes(k)){r.push(k);localStorage.setItem('laissa-ag',JSON.stringify(r))}}catch(e){}
+  agSave(agDay,agHour,nome||'')
   window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
   agHour=null;agLoad().then(b=>{agBusy=b;agRender()});
 };
-agLoad().then(b=>{agBusy=b;agRender()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender()});
+agLoad().then(b=>{agBusy=b;agRender();agRenderMine()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender();agRenderMine()});
 
 render();
 let nota=0;const fbs=[...document.querySelectorAll('#stars button')];
