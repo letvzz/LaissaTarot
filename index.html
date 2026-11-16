@@ -494,7 +494,7 @@ fbSend.onclick=()=>{
 /* FEEDBACK AUTOMÁTICO (opcional) — preencha depois de criar o Formulário e a Planilha do Google.
    form: endereço terminado em /formResponse | entries: códigos entry.xxxxx de cada pergunta | sheet: link CSV publicado da aba "Site".
    Com tudo vazio, o site usa o envio por WhatsApp (acima). */
-const FB_CFG={form:'',entries:{nome:'',nota:'',texto:'',autorizo:''},sheet:''};
+const FB_CFG={form:'https://docs.google.com/forms/d/e/1FAIpQLSdVWl4Fh2WxjuwiX4gdm1kMsfKC3F-AyqMAUPtqzRmWoQDPXA/formResponse',entries:{nome:'entry.1752458390',nota:'entry.565460772',texto:'entry.445375575',autorizo:'entry.157784808'},sheet:''};
 const fbOn=()=>!!(FB_CFG.form&&FB_CFG.entries.texto);
 if(fbOn()){if(fbHint)fbHint.textContent='Seu feedback será analisado pela Laissa antes de aparecer no site.';fbSend.lastChild.textContent=' Enviar feedback';fbStatus.hidden=false}
 if(fbOn())fbSend.onclick=async()=>{
