@@ -463,6 +463,8 @@ const AG_MOSTRAR_CHEIOS=true;
 /* AG_ICAL: "Endereço secreto em formato iCal" da agenda da Laissa (Google Agenda → Configurações → essa agenda).
    Os eventos dela passam a aparecer como horários ocupados no site. Serve para qualquer conta Google. */
 const AG_ICAL='https://calendar.google.com/calendar/ical/laissahorrana66%40gmail.com/private-a87756b1d79a4ab5ddebe09f4c01f38e/basic.ics';
+/* AG_SCRIPT: URL do App da Web que grava/cancela o evento na agenda da Laissa. */
+const AG_SCRIPT='https://script.google.com/macros/s/AKfycbwLZjY_1_XJby0TrzJxIBv_TCQOTpWuGzKKRED6iLZuSmDTD6BuGwfoDYWyHqMTpqos/exec';
 const AG_DIAS=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
 let agDay=null,agHour=null,agBusy=[];
 const pad=n=>String(n).padStart(2,'0');
@@ -495,11 +497,19 @@ const agLocal=()=>{try{
   const r=JSON.parse(localStorage.getItem('laissa-ag')||'[]')||[];
   return r.map(x=>typeof x==='string'?{dia:(x.split(' ')[0]||''),hora:(x.split(' ')[1]||''),nome:'',pedido:''}:x).filter(x=>x.dia&&x.hora);
 }catch(e){return[]}};
-const agSave=(dia,hora,nome)=>{try{
+const agSave=(dia,hora,nome,pedido)=>{try{
   const r=agLocal().filter(x=>!(x.dia===dia&&x.hora===hora));
-  r.push({dia,hora,nome:nome||'',pedido:agPedidoId()});
+  r.push({dia,hora,nome:nome||'',pedido:pedido||agPedidoId()});
   localStorage.setItem('laissa-ag',JSON.stringify(r));
 }catch(e){}};
+/* avisa a planilha/agenda (App da Web do Apps Script), sem travar a tela */
+function agEnviar(params){
+  if(!AG_SCRIPT)return Promise.resolve(null);
+  const q=Object.keys(params).map(k=>k+'='+encodeURIComponent(params[k])).join('&');
+  const url=AG_SCRIPT+'?'+q;
+  return fetch(url,{mode:'cors'}).then(r=>r.json())
+    .catch(()=>fetch(url,{mode:'no-cors'}).then(()=>null).catch(()=>null));
+}
 const agRemove=(dia,hora)=>{try{
   localStorage.setItem('laissa-ag',JSON.stringify(agLocal().filter(x=>!(x.dia===dia&&x.hora===hora))));
 }catch(e){}};
@@ -522,6 +532,8 @@ function agCancel(dia,hora){
   if(!confirm('Cancelar o agendamento de '+diaTxt+' às '+hora+'?'))return;
   agRemove(dia,hora);
   agBusy=agBusy.filter(k=>k!==dia+' '+hora);
+  const item=(agLocal().find(x=>x.dia===dia&&x.hora===hora)||{});
+  agEnviar({action:'cancelar',dia:dia,hora:hora,pedido:item.pedido||''});
   try{const st=JSON.parse(localStorage.getItem('laissa-agcan')||'[]')||[];st.push(dia+' '+hora);localStorage.setItem('laissa-agcan',JSON.stringify(st))}catch(e){}
   const msg='Olá, Laissa! Preciso cancelar o meu agendamento:\n\nDia: '+diaTxt+'\nHorário: '+hora+'\n\nDesculpe o transtorno!';
   window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
@@ -624,9 +636,12 @@ if(agBtn)agBtn.onclick=()=>{
   const [y,m,dd]=agDay.split('-').map(Number),dt=new Date(y,m-1,dd);
   const nome=($('agNome')?.value||'').trim();
   const msg='Olá, Laissa! Quero agendar uma tiragem:\n\nDia: '+AG_DIAS[dt.getDay()]+', '+pad(dd)+'/'+pad(m)+'/'+y+'\nHorário: '+agHour+(nome?'\nNome: '+nome:'')+'\n\nAguardo a confirmação. Obrigado(a)!';
-  agSave(agDay,agHour,nome||'')
+  const ped=agPedidoId();
+  agSave(agDay,agHour,nome||'',ped);
+  agEnviar({action:'agendar',dia:agDay,hora:agHour,nome:nome||'',pedido:ped})
+    .then(()=>agLoadAll()).then(b=>{if(b){agBusy=b;agRender();agRenderMine()}});
   window.open('https://wa.me/5585999901862?text='+encodeURIComponent(msg),'_blank','noopener');
-  agHour=null;agLoadAll().then(b=>{agBusy=b;agRender()});
+  agHour=null;agRenderMine();
 };
 agLoadAll().then(b=>{agBusy=b;agRender();agRenderMine()}).catch(()=>{agBusy=AG_RESERVAS_MANUAIS.slice();agRender();agRenderMine()});
 
